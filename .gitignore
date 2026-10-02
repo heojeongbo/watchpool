@@ -3,3 +3,4 @@ dist/
 coverage/
 perf-results.json
 *.tgz
+.npmrc
