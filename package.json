@@ -1,0 +1,106 @@
+{
+	"name": "@heojeongbo/watchpool",
+	"version": "0.1.0",
+	"description": "Share resilient streams across subscribers, with protocol adapters and React bindings.",
+	"type": "module",
+	"license": "MIT",
+	"author": "heojeongbo <heojungbo@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/heojeongbo/watchpool.git"
+	},
+	"homepage": "https://github.com/heojeongbo/watchpool#readme",
+	"bugs": "https://github.com/heojeongbo/watchpool/issues",
+	"keywords": [
+		"stream",
+		"react",
+		"connectrpc",
+		"subscription",
+		"deduplication"
+	],
+	"packageManager": "pnpm@11.16.0",
+	"engines": {
+		"node": ">=22"
+	},
+	"sideEffects": false,
+	"files": [
+		"dist",
+		"src",
+		"README.md",
+		"LICENSE",
+		"LICENSES.md"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./connect": {
+			"types": "./dist/connect.d.ts",
+			"import": "./dist/connect.js"
+		},
+		"./react": {
+			"types": "./dist/react.d.ts",
+			"import": "./dist/react.js"
+		},
+		"./sse": {
+			"types": "./dist/sse.d.ts",
+			"import": "./dist/sse.js"
+		},
+		"./websocket": {
+			"types": "./dist/websocket.d.ts",
+			"import": "./dist/websocket.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"type:check": "tsc --noEmit",
+		"lint": "biome check --error-on-warnings .",
+		"format": "biome check --write .",
+		"fsd:check": "node scripts/check-boundaries.mjs",
+		"test": "vitest run",
+		"test:coverage": "vitest run --coverage",
+		"perf": "tsx scripts/benchmark.ts",
+		"perf:check": "tsx scripts/benchmark.ts --check",
+		"check": "pnpm lint && pnpm fsd:check && pnpm type:check && pnpm test:coverage && pnpm build && pnpm perf:check",
+		"prepublishOnly": "pnpm check"
+	},
+	"peerDependencies": {
+		"@bufbuild/protobuf": "^2.10.0",
+		"@connectrpc/connect": "^2.1.0",
+		"react": "^18.0.0 || ^19.0.0"
+	},
+	"peerDependenciesMeta": {
+		"@bufbuild/protobuf": {
+			"optional": true
+		},
+		"@connectrpc/connect": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.15",
+		"@bufbuild/protobuf": "2.10.0",
+		"@connectrpc/connect": "2.1.0",
+		"@connectrpc/connect-web": "2.1.0",
+		"@testing-library/react": "16.3.0",
+		"@types/node": "24.3.0",
+		"@types/react": "19.0.8",
+		"@types/react-dom": "19.0.3",
+		"@types/ws": "8.18.1",
+		"@vitest/coverage-v8": "4.1.11",
+		"happy-dom": "20.14.5",
+		"react": "19.0.0",
+		"react-dom": "19.0.0",
+		"tsx": "4.20.4",
+		"typescript": "5.9.3",
+		"vitest": "4.1.11",
+		"ws": "8.22.0"
+	}
+}
