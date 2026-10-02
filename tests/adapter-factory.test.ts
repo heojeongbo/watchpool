@@ -9,7 +9,8 @@ import type {
 } from "@bufbuild/protobuf/wkt";
 import type { Transport } from "@connectrpc/connect";
 import { expect, expectTypeOf, it, vi } from "vitest";
-import { adapter, type StreamAdapter } from "../src/index.js";
+import { adapter } from "../src/connect.js";
+import type { StreamAdapter } from "../src/index.js";
 import type { ServerEvent } from "../src/sse.js";
 import { method } from "./connect-fixture.js";
 
@@ -52,7 +53,7 @@ it("rejects unknown protocols passed from JavaScript", () => {
 	expect(() => adapter({ type: "mqtt" })).toThrow("Unsupported adapter type");
 });
 
-it("snapshots Connect input, reuses the source, and cancels before or during loading", async () => {
+it("snapshots Connect input, reuses the source, and does not open an already cancelled stream", async () => {
 	const seen: unknown[] = [];
 	const stream = vi.fn(
 		async (
@@ -82,10 +83,6 @@ it("snapshots Connect input, reuses the source, and cancels before or during loa
 	const before = new AbortController();
 	before.abort();
 	await source.run(before.signal, sink);
-	const during = new AbortController();
-	const pending = source.run(during.signal, sink);
-	during.abort();
-	await pending;
 	expect(stream).not.toHaveBeenCalled();
 	await source.run(new AbortController().signal, sink);
 	await source.run(new AbortController().signal, sink);

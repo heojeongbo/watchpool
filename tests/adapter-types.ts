@@ -4,7 +4,7 @@ import type {
 	StringValueSchema,
 } from "@bufbuild/protobuf/wkt";
 import type { Transport } from "@connectrpc/connect";
-import { adapter } from "../src/index.js";
+import { adapter } from "../src/connect.js";
 
 // Compiled by type:check; invalid configurations must remain compile errors.
 export function checkInvalidOptions(
@@ -23,3 +23,10 @@ export function checkInvalidOptions(
 	// @ts-expect-error A custom protocol requires its implementation.
 	adapter({ type: "custom" });
 }
+
+// Options owned by useSyncExternalStore must not leak into the hook's public API.
+export const invalidHookOptions: import("../src/react.js").UseWatchOptions<number> =
+	{
+		// @ts-expect-error notify is managed by React, not a user callback.
+		notify() {},
+	};

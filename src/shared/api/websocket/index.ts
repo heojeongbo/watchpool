@@ -1,11 +1,15 @@
 import type { StreamAdapter } from "../../lib/watchpool/index.js";
 
 export interface WebSocketOptions<T> {
+	/** Defaults to the native constructor. The factory must return a fresh socket. */
+	createSocket?: (url: string, protocols?: string | string[]) => WebSocket;
 	url: string | (() => string);
 	protocols?: string | string[];
 	/** Decode text, Blob or ArrayBuffer according to the application's wire format. */
 	decode(data: unknown): T;
 }
+
+const SOCKET_CLOSING = 2;
 
 /** One socket per execution. Settle after close so a replacement never overlaps cleanup. */
 export function webSocketAdapter<T>(
@@ -15,7 +19,7 @@ export function webSocketAdapter<T>(
 		run: (signal, sink) => {
 			if (signal.aborted) return Promise.resolve();
 			return new Promise<void>((resolve, reject) => {
-				const socket = new WebSocket(
+				const socket = (options.createSocket ?? nativeSocket)(
 					typeof options.url === "function" ? options.url() : options.url,
 					options.protocols,
 				);
@@ -26,7 +30,7 @@ export function webSocketAdapter<T>(
 					socket.removeEventListener("message", message);
 					socket.removeEventListener("error", failedSocket);
 					signal.removeEventListener("abort", aborted);
-					if (socket.readyState < WebSocket.CLOSING) socket.close();
+					if (socket.readyState < SOCKET_CLOSING) socket.close();
 					// Keep the close listener: close() starts a handshake, it does not finish it.
 				}
 				function opened(): void {
@@ -62,4 +66,8 @@ export function webSocketAdapter<T>(
 			});
 		},
 	};
+}
+
+function nativeSocket(url: string, protocols?: string | string[]): WebSocket {
+	return new WebSocket(url, protocols);
 }

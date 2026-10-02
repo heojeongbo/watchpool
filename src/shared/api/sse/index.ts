@@ -4,6 +4,7 @@ import { openEventBody, readEventBody } from "./transport.js";
 import type { SseOptions } from "./types.js";
 
 export type { ServerEvent } from "./parser.js";
+export { SseHttpError } from "./transport.js";
 export type { SseOptions } from "./types.js";
 
 /** One logical SSE stream, including its resume cursor across connection attempts. */

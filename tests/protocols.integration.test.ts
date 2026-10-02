@@ -84,7 +84,11 @@ describe("real loopback protocols", () => {
 
 it("shares a real Connect RPC stream and retains it when one observer leaves", async () => {
 	const { createConnectTransport } = await import("@connectrpc/connect-web");
-	const { connectKey, connectRetry } = await import("../src/connect.js");
+	const {
+		adapter: connectFactory,
+		connectKey,
+		connectRetry,
+	} = await import("../src/connect.js");
 	const { method } = await import("./connect-fixture.js");
 	let requests = 0;
 	let closed = 0;
@@ -114,7 +118,7 @@ it("shares a real Connect RPC stream and retains it when one observer leaves", a
 		useBinaryFormat: false,
 	});
 	const pool = createWatchPool({ retry: connectRetry });
-	const source = adapter({
+	const source = connectFactory({
 		type: "connect",
 		transport,
 		method,

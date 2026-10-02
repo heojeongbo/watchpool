@@ -109,3 +109,31 @@ it("does not settle cancellation until the close handshake completes", async () 
 	await done;
 	expect(finished).toBe(true);
 });
+
+it("injects an application socket factory without replacing the global constructor", async () => {
+	const createSocket = vi.fn(
+		(url: string, protocols?: string | string[]) =>
+			new FakeSocket(url, protocols) as unknown as WebSocket,
+	);
+	const target = sink();
+	const abort = new AbortController();
+	const source = webSocketAdapter({
+		url: "wss://private.test",
+		protocols: ["json"],
+		decode: Number,
+		createSocket,
+	});
+	const done = source.run(abort.signal, target);
+	FakeSocket.latest.dispatchEvent(new Event("open"));
+	FakeSocket.latest.dispatchEvent(new MessageEvent("message", { data: "42" }));
+	expect(createSocket).toHaveBeenCalledWith("wss://private.test", ["json"]);
+	expect(target.emit).toHaveBeenCalledWith(42);
+	abort.abort();
+	closeSocket();
+	await done;
+	expect(FakeSocket.latest.close).toHaveBeenCalledOnce();
+	const second = source.run(new AbortController().signal, target);
+	expect(createSocket).toHaveBeenCalledTimes(2);
+	closeSocket();
+	await second;
+});

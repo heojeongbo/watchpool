@@ -1,4 +1,6 @@
 export interface SseOptions {
+	/** Defaults to the platform fetch; inject authentication or test transports. */
+	fetch?: typeof globalThis.fetch;
 	url: string | (() => string);
 	headers?: HeadersInit;
 	credentials?: RequestCredentials;

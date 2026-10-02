@@ -14,10 +14,10 @@ installed separately and retain their own licenses:
 | @connectrpc/connect 2.1.0 | Apache-2.0 |
 | @bufbuild/protobuf 2.10.0 | Apache-2.0 AND BSD-3-Clause |
 
-SSE and WebSocket execution uses native platform APIs. Connect and Protobuf are
-required peers for the unified factory’s public types; React remains optional.
+Core, SSE and WebSocket use native platform APIs. Connect, Protobuf and React
+are optional peers, isolated to their respective opt-in entrypoints.
 Their platform APIs (`fetch`, `WebSocket`, `TextDecoder`, timers) come from the
-browser or Node.js. Connect is loaded lazily by the factory; React is isolated to its entrypoint.
+browser or Node.js. The base factory has no imports of Connect or React, including public types.
 
 Development dependencies have MIT, Apache-2.0, BSD-3-Clause, ISC, dual MIT/Apache,
 or MPL-2.0 declarations. The MPL-2.0 packages are Lightning CSS development-tool

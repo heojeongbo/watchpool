@@ -9,10 +9,11 @@ and React entrypoints.
 pnpm add @heojeongbo/watchpool
 ```
 
-React is an optional peer. Connect and Protobuf are required peers for the unified
-factory’s TypeScript declarations; modern npm/pnpm install them automatically.
-The Connect runtime loads only when a Connect stream starts. ESM only; modern
-browsers or Node.js 22+.
+Core, SSE, WebSocket and iterable adapters need no third-party runtime packages.
+React, Connect and Protobuf are optional peers: install only the ones you use.
+For Connect, install `@connectrpc/connect` and `@bufbuild/protobuf`, then import
+`adapter` from `@heojeongbo/watchpool/connect`. That entrypoint also supports the
+base protocols with the same API. ESM only; modern browsers or Node.js 22+.
 
 `adapter({ type, ...options })` selects the protocol and infers its message type.
 Use `type: "custom"` with an `implementation: StreamAdapter<T>` to inject another
@@ -47,6 +48,39 @@ responses reject; configure `retry` if your endpoint treats them as terminal.
 Use one SSE source instance per independent subscription identity: its resume ID
 belongs to that logical stream. URL factories may refresh signed URLs per attempt.
 
+### HTTP errors, authentication and retry visibility
+
+SSE accepts `fetch: authenticatedFetch` for an application transport wrapper.
+`SseHttpError` exposes `status` and a copy of response `headers`; response bodies
+are cancelled before the error is delivered. Use structured metadata in policies:
+
+```ts
+import { createWatchPool, exponentialRetry } from "@heojeongbo/watchpool";
+import { SseHttpError, type ServerEvent } from "@heojeongbo/watchpool/sse";
+
+const pool = createWatchPool<ServerEvent>({
+  retry(context) {
+    const error = context.error;
+    if (error instanceof SseHttpError) {
+      if (error.status === 401 || error.status === 403) return false;
+      const seconds = Number(error.headers.get("retry-after"));
+      if (error.status === 429 && seconds > 0 && Number.isFinite(seconds)) {
+        return Math.min(seconds * 1000, 30_000);
+      }
+    }
+    return exponentialRetry(context);
+  },
+  onRetry: ({ key, attempt, delayMs, error }) =>
+    console.log("retry", { key, attempt, delayMs, error }),
+});
+```
+
+This example handles numeric Retry-After values; applications needing HTTP-date
+values should parse those explicitly. `onRetry` reports the zero-based attempt,
+EOF/failure, elapsed time and selected delay before scheduling. Callback failures
+are isolated; calling `dispose()` there prevents the retry. Observer `onError`
+remains reserved for terminal failures.
+
 ## WebSocket
 
 ```ts
@@ -67,12 +101,14 @@ Validate untrusted payloads in the decoder. Decode failures, socket errors and
 abnormal closes reject the source; code 1000 is clean EOF. This is a receive-only
 adapter; sending application commands remains the application's responsibility.
 Optional `protocols` are passed to the native WebSocket constructor.
+Inject `createSocket(url, protocols)` to provide a compatible application socket
+without modifying globals; return a fresh socket on every call.
 
 ## Connect RPC
 
 ```ts
-import { adapter, createWatchPool } from "@heojeongbo/watchpool";
-import { connectKey, connectRetry } from "@heojeongbo/watchpool/connect";
+import { createWatchPool } from "@heojeongbo/watchpool";
+import { adapter, connectKey, connectRetry } from "@heojeongbo/watchpool/connect";
 
 // `transport`, `watchMethod` and generated input types come from your application.
 const source = adapter({
@@ -265,3 +301,17 @@ commit and version aligned. npm authentication/2FA is owned by the maintainer;
 never commit credentials.
 
 MIT © heojeongbo
+
+### User scenario regression tests
+
+`tests/user-scenarios.test.ts` covers screen resubscription from state/open/error
+callbacks, removal during notification, runtime protocol selection, HTTP 401
+termination, HTTP 429 recovery, retry-observer failures and logout during retry.
+Additional suites cover injected socket cleanup, Connect cancellation, React
+StrictMode, real loopback connections and custom BroadcastChannel transport.
+`pnpm package:check` installs the built tarball in an isolated temporary project
+and checks strict TypeScript declarations and SSE execution without optional SDKs.
+It runs in `pnpm check` and CI.
+`tests/adapter-types.ts` checks invalid options at compile time, including React's
+internally owned notification callback. Coverage thresholds are a guard against
+unexecuted code, not a claim that every possible user scenario has been tested.

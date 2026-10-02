@@ -8,7 +8,9 @@ import {
 	type WatchState,
 } from "../../../shared/lib/watchpool/index.js";
 
-export interface UseWatchOptions<T> extends Observer<T>, WatchOptions {
+export interface UseWatchOptions<T>
+	extends Omit<Observer<T>, "notify">,
+		WatchOptions {
 	enabled?: boolean;
 }
 

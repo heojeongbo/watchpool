@@ -1,5 +1,18 @@
 import type { SseOptions } from "./types.js";
 
+/** HTTP metadata for authentication and retry policies, without retaining the response body. */
+export class SseHttpError extends Error {
+	readonly headers: Headers;
+	constructor(
+		readonly status: number,
+		headers: HeadersInit,
+	) {
+		super(`SSE HTTP ${status}`);
+		this.name = "SseHttpError";
+		this.headers = new Headers(headers);
+	}
+}
+
 /** Validate the HTTP response before handing ownership of its body to the reader. */
 export async function openEventBody(
 	options: SseOptions,
@@ -11,14 +24,14 @@ export async function openEventBody(
 	headers.delete("Last-Event-ID");
 	if (lastId) headers.set("Last-Event-ID", lastId);
 	const url = typeof options.url === "function" ? options.url() : options.url;
-	const response = await fetch(url, {
+	const response = await (options.fetch ?? globalThis.fetch)(url, {
 		headers,
 		credentials: options.credentials,
 		signal,
 	});
 	if (!response.ok) {
 		await response.body?.cancel();
-		throw new Error(`SSE HTTP ${response.status}`);
+		throw new SseHttpError(response.status, response.headers);
 	}
 	if (!response.body) throw new Error("SSE response has no body");
 	const contentType = response.headers

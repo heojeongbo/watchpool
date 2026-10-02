@@ -65,8 +65,9 @@
 		"test:coverage": "vitest run --coverage",
 		"perf": "tsx scripts/benchmark.ts",
 		"perf:check": "tsx scripts/benchmark.ts --check",
-		"check": "pnpm lint && pnpm fsd:check && pnpm type:check && pnpm test:coverage && pnpm build && pnpm perf:check",
-		"prepublishOnly": "pnpm check"
+		"check": "pnpm lint && pnpm fsd:check && pnpm type:check && pnpm test:coverage && pnpm build && pnpm package:check && pnpm perf:check",
+		"prepublishOnly": "pnpm check",
+		"package:check": "node scripts/check-package.mjs"
 	},
 	"peerDependencies": {
 		"@bufbuild/protobuf": "^2.10.0",
@@ -75,6 +76,12 @@
 	},
 	"peerDependenciesMeta": {
 		"react": {
+			"optional": true
+		},
+		"@bufbuild/protobuf": {
+			"optional": true
+		},
+		"@connectrpc/connect": {
 			"optional": true
 		}
 	},

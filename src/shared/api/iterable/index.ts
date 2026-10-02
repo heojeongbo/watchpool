@@ -6,8 +6,12 @@ export function iterableAdapter<T>(
 ): StreamAdapter<T> {
 	return {
 		async run(signal, sink): Promise<void> {
-			const iterable = await open(signal);
 			if (signal.aborted) return;
+			const iterable = await open(signal);
+			if (signal.aborted) {
+				await iterable[Symbol.asyncIterator]().return?.();
+				return;
+			}
 			sink.opened();
 			for await (const value of iterable) {
 				if (signal.aborted) return;

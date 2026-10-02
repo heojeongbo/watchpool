@@ -84,6 +84,15 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 		}
 	}
 
+	function dispatch(
+		entry: Entry<T>,
+		deliver: (observer: Observer<T>) => void,
+	): void {
+		for (const observer of [...entry.observers]) {
+			if (entry.observers.has(observer)) call(() => deliver(observer));
+		}
+	}
+
 	function state(entry: Entry<T>, patch: Partial<WatchState>): void {
 		const next = { ...entry.state, ...patch };
 		if (
@@ -93,7 +102,7 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 		)
 			return;
 		entry.state = Object.freeze(next);
-		for (const observer of entry.observers) call(observer.notify);
+		dispatch(entry, (observer) => observer.notify?.());
 	}
 
 	function tick(): void {
@@ -150,7 +159,7 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 			await source.run(entry.abort.signal, {
 				opened: () => {
 					if (entry.stopped) return;
-					for (const observer of entry.observers) call(observer.onOpen);
+					dispatch(entry, (observer) => observer.onOpen?.());
 				},
 				emit: (value) => {
 					if (entry.stopped) return;
@@ -186,11 +195,21 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 		}
 		if (delay === false) {
 			state(entry, { status: ended ? "ended" : "error" });
-			if (!ended)
-				for (const observer of entry.observers)
-					call(() => observer.onError?.(error));
+			if (!ended) dispatch(entry, (observer) => observer.onError?.(error));
 			return;
 		}
+		const delayMs = delay;
+		call(() =>
+			options.onRetry?.({
+				key,
+				attempt: entry.attempt,
+				elapsedMs,
+				ended,
+				error,
+				delayMs,
+			}),
+		);
+		if (entry.stopped) return;
 		entry.attempt++;
 		counters.retries++;
 		state(entry, { status: "retrying" });

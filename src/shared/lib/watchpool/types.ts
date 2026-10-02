@@ -35,6 +35,10 @@ export type RetryPolicy = (context: RetryContext) => number | false;
 export interface PoolOptions {
 	lingerMs?: number;
 	retry?: RetryPolicy;
+	/** Called before each scheduled retry. Exceptions are isolated like observer callbacks. */
+	onRetry?: (
+		event: RetryContext & { readonly key: string; readonly delayMs: number },
+	) => void;
 	/** Called for an isolated callback failure. Reporter failures are isolated too. */
 	onCallbackError?: (error: unknown) => void;
 	/** Optional worker-backed clock. Return a function that stops ticking. */

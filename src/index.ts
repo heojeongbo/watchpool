@@ -1,7 +1,7 @@
 export {
 	type AdapterOptions,
+	type AdapterValue,
 	adapter,
-	type ConnectAdapterOptions,
 	type CustomAdapterOptions,
 	type IterableAdapterOptions,
 	type SseAdapterOptions,

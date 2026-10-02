@@ -1,10 +1,3 @@
-import type {
-	DescMessage,
-	DescMethodServerStreaming,
-	MessageInitShape,
-	MessageShape,
-} from "@bufbuild/protobuf";
-import type { Transport } from "@connectrpc/connect";
 import type { StreamAdapter } from "../../lib/watchpool/index.js";
 import { iterableAdapter } from "../iterable/index.js";
 import { type ServerEvent, type SseOptions, sseAdapter } from "../sse/index.js";
@@ -22,49 +15,27 @@ export interface CustomAdapterOptions<T> {
 	type: "custom";
 	implementation: StreamAdapter<T>;
 }
-export interface ConnectAdapterOptions<
-	I extends DescMessage,
-	O extends DescMessage,
-> {
-	type: "connect";
-	transport: Transport;
-	method: DescMethodServerStreaming<I, O>;
-	input: MessageInitShape<I>;
-}
-export type AdapterOptions<
-	T,
-	I extends DescMessage = DescMessage,
-	O extends DescMessage = DescMessage,
-> =
+export type AdapterOptions<T = unknown> =
 	| SseAdapterOptions
 	| WebSocketAdapterOptions<T>
 	| IterableAdapterOptions<T>
-	| CustomAdapterOptions<T>
-	| ConnectAdapterOptions<I, O>;
+	| CustomAdapterOptions<T>;
+/** Distributes over option unions, retaining only the selected protocols' payloads. */
+export type AdapterValue<O> = O extends SseAdapterOptions
+	? ServerEvent
+	: O extends WebSocketAdapterOptions<infer T>
+		? T
+		: O extends IterableAdapterOptions<infer T>
+			? T
+			: O extends CustomAdapterOptions<infer T>
+				? T
+				: never;
 
-export function adapter(options: SseAdapterOptions): StreamAdapter<ServerEvent>;
-export function adapter<T>(
-	options: WebSocketAdapterOptions<T>,
-): StreamAdapter<T>;
-export function adapter<T>(
-	options: IterableAdapterOptions<T>,
-): StreamAdapter<T>;
-export function adapter<T>(options: CustomAdapterOptions<T>): StreamAdapter<T>;
-export function adapter<I extends DescMessage, O extends DescMessage>(
-	options: ConnectAdapterOptions<I, O>,
-): StreamAdapter<MessageShape<O>>;
-export function adapter<
-	T,
-	I extends DescMessage = DescMessage,
-	O extends DescMessage = DescMessage,
->(
-	options: AdapterOptions<T, I, O>,
-): StreamAdapter<T | ServerEvent | MessageShape<O>>;
-
-/** Select a typed protocol adapter. Lifecycle and pooling remain protocol-neutral. */
-export function adapter<T, I extends DescMessage, O extends DescMessage>(
-	options: AdapterOptions<T, I, O>,
-): StreamAdapter<T | ServerEvent | MessageShape<O>> {
+export function adapter<O extends AdapterOptions>(
+	options: O,
+): StreamAdapter<AdapterValue<O>>;
+/** Protocol selection runs once; the pool depends only on StreamAdapter. */
+export function adapter(options: AdapterOptions): StreamAdapter<unknown> {
 	switch (options.type) {
 		case "sse":
 			return sseAdapter(options);
@@ -74,27 +45,7 @@ export function adapter<T, I extends DescMessage, O extends DescMessage>(
 			return iterableAdapter(options.open);
 		case "custom":
 			return options.implementation;
-		case "connect":
-			return lazyConnect(options);
 		default:
 			throw new TypeError("Unsupported adapter type");
 	}
-}
-
-/** The Connect SDK is loaded only when a Connect stream actually starts. */
-function lazyConnect<I extends DescMessage, O extends DescMessage>(
-	options: ConnectAdapterOptions<I, O>,
-): StreamAdapter<MessageShape<O>> {
-	const { transport, method } = options;
-	const input = structuredClone(options.input);
-	let source: StreamAdapter<MessageShape<O>> | undefined;
-	return {
-		async run(signal, sink): Promise<void> {
-			if (signal.aborted) return;
-			const { connectAdapter } = await import("../connect/index.js");
-			if (signal.aborted) return;
-			source ??= connectAdapter(transport, method, input);
-			await source.run(signal, sink);
-		},
-	};
 }
