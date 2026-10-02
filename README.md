@@ -2,25 +2,31 @@
 
 Share one upstream stream per key across subscribers. Keep the latest value,
 reconnect after transient failures, and release resources when the last subscriber
-leaves. Protocol-neutral TypeScript core, optional Connect RPC, SSE, WebSocket,
+leaves. Protocol-neutral TypeScript core, Connect RPC, SSE, WebSocket,
 and React entrypoints.
 
 ```sh
 pnpm add @heojeongbo/watchpool
 ```
 
-React users also install `react`. Connect users also install
-`@connectrpc/connect` and `@bufbuild/protobuf`. Core, SSE and WebSocket users do
-not need those optional peers. ESM only; modern browsers or Node.js 22+.
+React is an optional peer. Connect and Protobuf are required peers for the unified
+factory’s TypeScript declarations; modern npm/pnpm install them automatically.
+The Connect runtime loads only when a Connect stream starts. ESM only; modern
+browsers or Node.js 22+.
+
+`adapter({ type, ...options })` selects the protocol and infers its message type.
+Use `type: "custom"` with an `implementation: StreamAdapter<T>` to inject another
+protocol without changing the pool. The named factories from 0.1 remain available
+for compatibility. Protocol selection happens once at creation, not per message.
 
 ## SSE
 
 ```ts
-import { createWatchPool } from "@heojeongbo/watchpool";
-import { sseAdapter, type ServerEvent } from "@heojeongbo/watchpool/sse";
+import { adapter, createWatchPool } from "@heojeongbo/watchpool";
+import { type ServerEvent } from "@heojeongbo/watchpool/sse";
 
 const pool = createWatchPool<ServerEvent>();
-const source = sseAdapter({ url: "https://example.com/status" });
+const source = adapter({ type: "sse", url: "https://example.com/status" });
 const unsubscribe = pool.subscribe("status", source, {
   onMessage: (event) => console.log(event.data),
 });
@@ -44,12 +50,12 @@ belongs to that logical stream. URL factories may refresh signed URLs per attemp
 ## WebSocket
 
 ```ts
-import { createWatchPool } from "@heojeongbo/watchpool";
-import { webSocketAdapter } from "@heojeongbo/watchpool/websocket";
+import { adapter, createWatchPool } from "@heojeongbo/watchpool";
 
 type Position = { x: number; y: number };
 const pool = createWatchPool<Position>();
-const source = webSocketAdapter({
+const source = adapter({
+  type: "websocket",
   url: "wss://example.com/positions",
   decode: (data): Position => JSON.parse(String(data)),
 });
@@ -65,11 +71,13 @@ Optional `protocols` are passed to the native WebSocket constructor.
 ## Connect RPC
 
 ```ts
-import { createWatchPool } from "@heojeongbo/watchpool";
-import { connectKey, connectRetry, connectAdapter } from "@heojeongbo/watchpool/connect";
+import { adapter, createWatchPool } from "@heojeongbo/watchpool";
+import { connectKey, connectRetry } from "@heojeongbo/watchpool/connect";
 
 // `transport`, `watchMethod` and generated input types come from your application.
-const source = connectAdapter(transport, watchMethod, { id: "robot-1" });
+const source = adapter({
+  type: "connect", transport, method: watchMethod, input: { id: "robot-1" },
+});
 const pool = createWatchPool({ retry: connectRetry });
 const leave = pool.subscribe(
   connectKey(watchMethod, { id: "robot-1" }),
@@ -88,13 +96,13 @@ applications with unordered map inputs should normalize map insertion order.
 ## React
 
 ```tsx
-import { createWatchPool } from "@heojeongbo/watchpool";
+import { adapter, createWatchPool } from "@heojeongbo/watchpool";
 import { useWatch } from "@heojeongbo/watchpool/react";
-import { sseAdapter, type ServerEvent } from "@heojeongbo/watchpool/sse";
+import { type ServerEvent } from "@heojeongbo/watchpool/sse";
 
 // Own this pool at the transport/session scope, outside component renders.
 const pool = createWatchPool<ServerEvent>();
-const source = sseAdapter({ url: "/events" });
+const source = adapter({ type: "sse", url: "/events" });
 
 function Status() {
   const state = useWatch(pool, "status", source, {
@@ -118,8 +126,8 @@ across authenticated requests.
 Adapt an abortable async iterable:
 
 ```ts
-import { iterableAdapter } from "@heojeongbo/watchpool";
-const source = iterableAdapter((signal) => client.watch({ signal }));
+import { adapter } from "@heojeongbo/watchpool";
+const source = adapter({ type: "iterable", open: (signal) => client.watch({ signal }) });
 ```
 
 Or implement `StreamAdapter<T>` directly:

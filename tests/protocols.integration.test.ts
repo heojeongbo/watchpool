@@ -3,9 +3,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
-import { createWatchPool } from "../src/index.js";
-import { type ServerEvent, sseAdapter } from "../src/sse.js";
-import { webSocketAdapter } from "../src/websocket.js";
+import { adapter, createWatchPool } from "../src/index.js";
+import type { ServerEvent } from "../src/sse.js";
 
 describe("real loopback protocols", () => {
 	it("shares one HTTP SSE connection, delivers split events and closes the request", async () => {
@@ -26,7 +25,7 @@ describe("real loopback protocols", () => {
 		const pool = createWatchPool<ServerEvent>();
 		const a = vi.fn();
 		const b = vi.fn();
-		const source = sseAdapter({ url });
+		const source = adapter({ type: "sse", url });
 		try {
 			pool.subscribe("status", source, { onMessage: a });
 			pool.subscribe("status", source, { onMessage: b });
@@ -60,7 +59,8 @@ describe("real loopback protocols", () => {
 			});
 		});
 		const pool = createWatchPool<{ value: number }>();
-		const source = webSocketAdapter({
+		const source = adapter({
+			type: "websocket",
 			url: `ws://127.0.0.1:${(server.address() as AddressInfo).port}`,
 			decode: (data) => JSON.parse(String(data)) as { value: number },
 		});
@@ -84,9 +84,7 @@ describe("real loopback protocols", () => {
 
 it("shares a real Connect RPC stream and retains it when one observer leaves", async () => {
 	const { createConnectTransport } = await import("@connectrpc/connect-web");
-	const { connectAdapter, connectKey, connectRetry } = await import(
-		"../src/connect.js"
-	);
+	const { connectKey, connectRetry } = await import("../src/connect.js");
 	const { method } = await import("./connect-fixture.js");
 	let requests = 0;
 	let closed = 0;
@@ -116,7 +114,12 @@ it("shares a real Connect RPC stream and retains it when one observer leaves", a
 		useBinaryFormat: false,
 	});
 	const pool = createWatchPool({ retry: connectRetry });
-	const source = connectAdapter(transport, method, { id: "one" });
+	const source = adapter({
+		type: "connect",
+		transport,
+		method,
+		input: { id: "one" },
+	});
 	const key = connectKey(method, { id: "one" });
 	const a = vi.fn();
 	const b = vi.fn();
