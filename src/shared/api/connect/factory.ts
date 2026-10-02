@@ -22,19 +22,26 @@ export interface ConnectAdapterOptions<
 	method: DescMethodServerStreaming<I, O>;
 	input: MessageInitShape<I>;
 }
-export function adapter<I extends DescMessage, O extends DescMessage>(
-	options: ConnectAdapterOptions<I, O>,
-): StreamAdapter<MessageShape<O>>;
-export function adapter<A extends AdapterOptions>(
-	options: A,
-): StreamAdapter<AdapterValue<A>>;
-export function adapter<
-	I extends DescMessage,
-	O extends DescMessage,
-	A extends AdapterOptions,
->(
-	options: ConnectAdapterOptions<I, O> | A,
-): StreamAdapter<MessageShape<O> | AdapterValue<A>>;
+type FactoryOptions =
+	| ConnectAdapterOptions<DescMessage, DescMessage>
+	| AdapterOptions;
+type CheckedOptions<A> = A extends {
+	type: "connect";
+	method: DescMethodServerStreaming<infer I, infer O>;
+}
+	? ConnectAdapterOptions<I, O>
+	: A;
+export type ConnectAdapterValue<A> = A extends {
+	type: "connect";
+	method: DescMethodServerStreaming<DescMessage, infer O>;
+}
+	? MessageShape<O>
+	: AdapterValue<A>;
+
+/** Infer each selected method independently; input validation cannot widen its schema. */
+export function adapter<A extends FactoryOptions>(
+	options: A & NoInfer<CheckedOptions<A>>,
+): StreamAdapter<ConnectAdapterValue<A>>;
 /** Connect opt-in entrypoint: retains the same typed factory API without core SDK dependencies. */
 export function adapter(
 	options: ConnectAdapterOptions<DescMessage, DescMessage> | AdapterOptions,

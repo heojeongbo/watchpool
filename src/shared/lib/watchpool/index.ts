@@ -12,6 +12,7 @@ export type {
 	RetryPolicy,
 	Sink,
 	StreamAdapter,
+	StreamValue,
 	WatchOptions,
 	WatchPool,
 	WatchState,

@@ -20,6 +20,12 @@ Use `type: "custom"` with an `implementation: StreamAdapter<T>` to inject anothe
 protocol without changing the pool. The named factories from 0.1 remain available
 for compatibility. Protocol selection happens once at creation, not per message.
 
+## Start here
+
+- [Getting started](https://github.com/heojeongbo/watchpool/blob/main/docs/getting-started.md): installation, pool ownership, keys and typed payloads.
+- [React guide](https://github.com/heojeongbo/watchpool/blob/main/docs/react.md): render messages, switch resources and clean up sessions.
+- [Troubleshooting](https://github.com/heojeongbo/watchpool/blob/main/docs/troubleshooting.md): retries, authentication, inference and lifecycle surprises.
+
 ## SSE
 
 ```ts
@@ -107,14 +113,14 @@ without modifying globals; return a fresh socket on every call.
 ## Connect RPC
 
 ```ts
-import { createWatchPool } from "@heojeongbo/watchpool";
+import { createWatchPool, type StreamValue } from "@heojeongbo/watchpool";
 import { adapter, connectKey, connectRetry } from "@heojeongbo/watchpool/connect";
 
 // `transport`, `watchMethod` and generated input types come from your application.
 const source = adapter({
   type: "connect", transport, method: watchMethod, input: { id: "robot-1" },
 });
-const pool = createWatchPool({ retry: connectRetry });
+const pool = createWatchPool<StreamValue<typeof source>>({ retry: connectRetry });
 const leave = pool.subscribe(
   connectKey(watchMethod, { id: "robot-1" }),
   source,
@@ -238,7 +244,7 @@ pnpm pack
 ```
 
 `pnpm check` runs Biome, FSD boundary checks, TypeScript, Vitest coverage, the ESM
-build and performance checks. CI repeats it on Node 22 and 24. Coverage thresholds
+build, documentation examples, isolated consumer installation and performance checks. CI repeats it on Node 22 and 24. Coverage thresholds
 are 100% **per source file** for statements, branches, functions and lines; all
 `src/**/*.ts` and `examples/**/*.ts` files are included, including newly added files. Tests and tooling
 are outside the runtime coverage denominator. Unit tests cover lifecycle and

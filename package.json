@@ -1,6 +1,6 @@
 {
 	"name": "@heojeongbo/watchpool",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Share resilient streams across subscribers, with protocol adapters and React bindings.",
 	"type": "module",
 	"license": "MIT",
@@ -65,9 +65,10 @@
 		"test:coverage": "vitest run --coverage",
 		"perf": "tsx scripts/benchmark.ts",
 		"perf:check": "tsx scripts/benchmark.ts --check",
-		"check": "pnpm lint && pnpm fsd:check && pnpm type:check && pnpm test:coverage && pnpm build && pnpm package:check && pnpm perf:check",
+		"check": "pnpm lint && pnpm fsd:check && pnpm type:check && pnpm test:coverage && pnpm build && pnpm docs:check && pnpm package:check && pnpm perf:check",
 		"prepublishOnly": "pnpm check",
-		"package:check": "node scripts/check-package.mjs"
+		"package:check": "node scripts/check-package.mjs",
+		"docs:check": "node scripts/check-docs.mjs"
 	},
 	"peerDependencies": {
 		"@bufbuild/protobuf": "^2.10.0",
