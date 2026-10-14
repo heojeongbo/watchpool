@@ -4,9 +4,91 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import { adapter, createWatchPool } from "../src/index.js";
-import type { ServerEvent } from "../src/sse.js";
+import { type ServerEvent, SseHttpError } from "../src/sse.js";
 
 describe("real loopback protocols", () => {
+	it("reconnects with the exact UTF-8 bytes of a Unicode SSE cursor", async () => {
+		const id = "이벤트-café-☕";
+		const headers: (string | undefined)[] = [];
+		const server = createServer((request, response) => {
+			headers.push(request.headers["last-event-id"] as string | undefined);
+			response.writeHead(200, { "Content-Type": "text/event-stream" });
+			response.end(
+				headers.length === 1
+					? `id: ${id}\ndata: first\n\n`
+					: "data: second\n\n",
+			);
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const source = adapter({
+			type: "sse",
+			url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+		});
+		const emit = vi.fn();
+		try {
+			for (let attempt = 0; attempt < 2; attempt++)
+				await source.run(new AbortController().signal, { opened() {}, emit });
+			expect(headers).toEqual([
+				undefined,
+				Buffer.from(id, "utf8").toString("latin1"),
+			]);
+			expect(emit).toHaveBeenLastCalledWith({
+				id,
+				event: "message",
+				data: "second",
+			});
+		} finally {
+			server.closeAllConnections();
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+		}
+	});
+	it("retains HTTP 401 metadata after a native fetch response body fails", async () => {
+		const server = createServer((_request, response) => {
+			response.writeHead(401, {
+				"Content-Type": "text/plain",
+				"Content-Length": "1000",
+				"WWW-Authenticate": "Bearer",
+			});
+			response.write("unauthorized");
+		});
+		server.listen(0, "127.0.0.1");
+		await once(server, "listening");
+		const source = adapter({
+			type: "sse",
+			url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+			fetch: async (...args) => {
+				const response = await fetch(...args);
+				if (!response.body) throw new Error("Expected a streaming HTTP body");
+				const reader = response.body.getReader();
+				server.closeAllConnections();
+				try {
+					while (!(await reader.read()).done) {
+						/* Drain until the truncated body rejects. */
+					}
+				} catch {
+					// Return the original response with its body now errored and unlocked.
+				} finally {
+					reader.releaseLock();
+				}
+				return response;
+			},
+		});
+		try {
+			const done = source.run(new AbortController().signal, {
+				opened() {},
+				emit() {},
+			});
+			await expect(done).rejects.toBeInstanceOf(SseHttpError);
+			await expect(done).rejects.toMatchObject({ status: 401 });
+			await done.catch((error: SseHttpError) =>
+				expect(error.headers.get("www-authenticate")).toBe("Bearer"),
+			);
+		} finally {
+			server.closeAllConnections();
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+		}
+	});
 	it("shares one HTTP SSE connection, delivers split events and closes the request", async () => {
 		let requests = 0;
 		let closed = 0;

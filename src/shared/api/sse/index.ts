@@ -13,7 +13,10 @@ export function sseAdapter(options: SseOptions): StreamAdapter<ServerEvent> {
 	if (!Number.isSafeInteger(maxEventChars) || maxEventChars <= 0) {
 		throw new RangeError("maxEventChars must be a positive integer");
 	}
-	let lastId = new Headers(options.headers).get("Last-Event-ID") ?? "";
+	const initialHeader = new Headers(options.headers).get("Last-Event-ID") ?? "";
+	let lastId = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+		Uint8Array.from(initialHeader, (character) => character.charCodeAt(0)),
+	);
 	return {
 		async run(signal, sink): Promise<void> {
 			const body = await openEventBody(options, lastId, signal);
@@ -23,14 +26,12 @@ export function sseAdapter(options: SseOptions): StreamAdapter<ServerEvent> {
 				rememberId: (id) => {
 					lastId = id;
 				},
-				emit: (event) => {
-					if (!signal.aborted) sink.emit(event);
-				},
+				emit: (event) => sink.emit(event),
 			});
 			await readEventBody(body, {
 				signal,
 				opened: () => sink.opened(),
-				write: (chunk) => parser.write(chunk),
+				write: (chunk) => parser.write(chunk, signal),
 			});
 		},
 	};

@@ -53,12 +53,17 @@ the pool; SSE `retry:` fields are deliberately ignored. HTTP 204 and non-2xx
 responses reject; configure `retry` if your endpoint treats them as terminal.
 Use one SSE source instance per independent subscription identity: its resume ID
 belongs to that logical stream. URL factories may refresh signed URLs per attempt.
+Resume IDs are sent as UTF-8 header bytes, including Unicode IDs. A manually
+supplied `Last-Event-ID` in `headers` must also contain UTF-8 bytes represented as
+a header byte string. Cancelling during a chunk stops parsing before later
+events can advance that stream's resume ID.
 
 ### HTTP errors, authentication and retry visibility
 
 SSE accepts `fetch: authenticatedFetch` for an application transport wrapper.
 `SseHttpError` exposes `status` and a copy of response `headers`; response bodies
-are cancelled before the error is delivered. Use structured metadata in policies:
+are cancelled before the error is delivered. A cancellation failure does not
+replace the HTTP error. Use structured metadata in policies:
 
 ```ts
 import { createWatchPool, exponentialRetry } from "@heojeongbo/watchpool";
@@ -205,7 +210,8 @@ source cleanup independent of `pool.dispose()` to avoid cyclic waiting.
 
 - The first subscriber chooses the source and staleness window for a key's
   lifetime. Every acquisition owns a separate reference, even with an identical
-  observer object. Unsubscribe is idempotent.
+  observer object. Observer instances are retained by reference, preserving class
+  methods and their `this` receiver. Unsubscribe is idempotent.
 - Late subscribers receive the retained latest value, including `undefined`.
   They do not receive `onOpen`; no new connection opened for them. This is
   snapshot replay, not lossless event history. Log/event consumers need their

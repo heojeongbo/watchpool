@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createWatchPool } from "../src/index.js";
 import {
 	createEventParser,
 	type ServerEvent,
 } from "../src/shared/api/sse/parser.js";
-import { sseAdapter } from "../src/sse.js";
+import { SseHttpError, sseAdapter } from "../src/sse.js";
+import { flush } from "./helpers.js";
 
 afterEach(() => vi.unstubAllGlobals());
 function response(
@@ -63,6 +65,172 @@ describe("SSE framing", () => {
 	});
 });
 describe("fetch SSE adapter", () => {
+	it.each(["id: 2\ndata: two\n\n", "id: 2\n\n"])(
+		"preserves the delivered cursor when disposal interrupts a chunk (case %#)",
+		async (remaining) => {
+			const fetcher = vi
+				.fn<typeof fetch>()
+				.mockResolvedValueOnce(response([`id: 1\ndata: one\n\n${remaining}`]))
+				.mockResolvedValueOnce(response(["id: 2\ndata: two\n\n"]));
+			const source = sseAdapter({
+				url: "/events",
+				fetch: fetcher,
+				maxEventChars: 32,
+			});
+			const pool = createWatchPool<ServerEvent>({ retry: () => false });
+			const received: string[] = [];
+			let disposal: Promise<void> | undefined;
+			try {
+				pool.subscribe("events", source, {
+					onMessage(event) {
+						received.push(event.id);
+						disposal = pool.dispose();
+					},
+				});
+				await flush();
+				await disposal;
+				expect(received).toEqual(["1"]);
+				await source.run(new AbortController().signal, {
+					opened() {},
+					emit: (event) => received.push(event.id),
+				});
+				expect(
+					new Headers(fetcher.mock.calls[1][1]?.headers).get("Last-Event-ID"),
+				).toBe("1");
+				expect(received).toEqual(["1", "2"]);
+			} finally {
+				await pool.dispose();
+			}
+		},
+	);
+	it("stops parsing before an oversized trailing event after cancellation", async () => {
+		const abort = new AbortController();
+		const source = sseAdapter({
+			url: "/events",
+			maxEventChars: 32,
+			fetch: async () => response([`data: first\n\ndata: ${"x".repeat(100)}`]),
+		});
+		await expect(
+			source.run(abort.signal, {
+				opened() {},
+				emit() {
+					abort.abort();
+				},
+			}),
+		).resolves.toBeUndefined();
+	});
+	it("does not parse a read that completes after cancellation", async () => {
+		let controller!: ReadableStreamDefaultController<Uint8Array>;
+		const cancel = vi.fn();
+		const body = new ReadableStream<Uint8Array>({
+			start(value) {
+				controller = value;
+			},
+			cancel,
+		});
+		const fetcher = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(
+				new Response(body, {
+					headers: { "content-type": "text/event-stream" },
+				}),
+			)
+			.mockResolvedValueOnce(response([]));
+		const source = sseAdapter({
+			url: "/events",
+			fetch: fetcher,
+			headers: { "Last-Event-ID": "1" },
+		});
+		const abort = new AbortController();
+		const target = sink();
+		const done = source.run(abort.signal, target);
+		await flush();
+		expect(target.opened).toHaveBeenCalledOnce();
+		abort.abort();
+		controller.enqueue(new TextEncoder().encode("id: 2\ndata: late\n\n"));
+		await done;
+		expect(target.emit).not.toHaveBeenCalled();
+		expect(cancel).toHaveBeenCalledOnce();
+		expect(body.locked).toBe(false);
+		await source.run(new AbortController().signal, target);
+		expect(
+			new Headers(fetcher.mock.calls[1][1]?.headers).get("Last-Event-ID"),
+		).toBe("1");
+	});
+	it("preserves caller-provided UTF-8 cursor bytes and their decoded event ID", async () => {
+		const id = "\uFEFF이벤트-☕";
+		const header = Buffer.from(id, "utf8").toString("latin1");
+		const fetcher = vi.fn<typeof fetch>(async () =>
+			response(["data: next\n\n"]),
+		);
+		const source = sseAdapter({
+			url: "/events",
+			fetch: fetcher,
+			headers: { "Last-Event-ID": header },
+		});
+		const target = sink();
+		await source.run(new AbortController().signal, target);
+		await source.run(new AbortController().signal, target);
+		for (const [, init] of fetcher.mock.calls)
+			expect(new Headers(init?.headers).get("Last-Event-ID")).toBe(header);
+		expect(target.emit).toHaveBeenLastCalledWith({
+			data: "next",
+			event: "message",
+			id,
+		});
+	});
+	it.each(["이벤트-1", "café-☕", "x".repeat(150_000)])(
+		"encodes resume IDs as UTF-8 header bytes (case %#)",
+		async (id) => {
+			const fetcher = vi
+				.fn<typeof fetch>()
+				.mockResolvedValueOnce(response([`id: ${id}\ndata: first\n\n`]))
+				.mockResolvedValueOnce(response(["data: second\n\n"]));
+			const source = sseAdapter({ url: "/events", fetch: fetcher });
+			const target = sink();
+			await source.run(new AbortController().signal, target);
+			await source.run(new AbortController().signal, target);
+			const header = new Headers(fetcher.mock.calls[1][1]?.headers).get(
+				"Last-Event-ID",
+			);
+			expect(header).toBe(Buffer.from(id, "utf8").toString("latin1"));
+			expect(target.emit).toHaveBeenLastCalledWith({
+				data: "second",
+				event: "message",
+				id,
+			});
+		},
+	);
+	it.each([401, 429, 200])(
+		"preserves response validation errors when cancelling HTTP %s fails",
+		async (status) => {
+			const cancel = vi.fn(async () => {
+				throw new Error("cleanup failed");
+			});
+			const fetcher = vi.fn<typeof fetch>(
+				async () =>
+					new Response(new ReadableStream({ cancel }), {
+						status,
+						headers: { "content-type": "text/plain", "retry-after": "2" },
+					}),
+			);
+			const source = sseAdapter({ url: "/events", fetch: fetcher });
+			const done = source.run(new AbortController().signal, sink());
+			if (status === 200)
+				await expect(done).rejects.toThrow("Expected text/event-stream");
+			else {
+				await expect(done).rejects.toBeInstanceOf(SseHttpError);
+				await expect(done).rejects.toMatchObject({
+					status,
+					headers: expect.any(Headers),
+				});
+				await done.catch((error: SseHttpError) =>
+					expect(error.headers.get("retry-after")).toBe("2"),
+				);
+			}
+			expect(cancel).toHaveBeenCalledOnce();
+		},
+	);
 	it("dispatches frames and resumes with Last-Event-ID on a fresh connection", async () => {
 		const fetcher = vi
 			.fn()

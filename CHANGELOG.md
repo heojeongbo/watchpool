@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.2 — 2026-10-14
+
+- Stop SSE parsing on cancellation, retaining the last delivered cursor when
+  disposal interrupts a network chunk or a pending read completes after abort.
+- Encode SSE resume IDs as UTF-8 header bytes, including Unicode IDs, and decode
+  caller-provided resume headers without changing their cursor on reconnect.
+- Preserve observer instances and their method receivers while keeping each
+  subscription independently owned, including repeated acquisitions and replay.
+- Preserve HTTP status/headers and content-type errors when response body
+  cancellation fails, so authentication and rate-limit retry policies still work.
+- Add regressions and real HTTP integration tests for these cases; retain 100%
+  per-file statement, branch, function and line coverage.
+
 ## 0.2.1 — 2026-10-02
 
 - Infer payload unions when selecting between Connect methods with different

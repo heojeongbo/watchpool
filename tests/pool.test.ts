@@ -26,6 +26,49 @@ afterEach(async () => {
 	vi.useRealTimers();
 });
 describe("ownership and fanout", () => {
+	it("preserves class observer methods and receivers across independent acquisitions", async () => {
+		class View {
+			#values: unknown[] = [];
+			opens = 0;
+			notifications = 0;
+			errors: unknown[] = [];
+			onMessage(value: unknown) {
+				this.#values.push(value);
+			}
+			onOpen() {
+				this.opens++;
+			}
+			notify() {
+				this.notifications++;
+			}
+			onError(error: unknown) {
+				this.errors.push(error);
+			}
+			get values() {
+				return this.#values;
+			}
+		}
+		const p = pool({ retry: () => false });
+		const s = controlled();
+		const observer = new View();
+		const leave = p.subscribe("a", s.source, observer);
+		p.subscribe("a", s.source, observer);
+		await flush();
+		expect(observer.opens).toBe(2);
+		s.connections[0].sink.emit(1);
+		expect(observer.notifications).toBe(2);
+		expect(observer.values).toEqual([1, 1]);
+		leave();
+		p.subscribe("a", s.source, observer);
+		expect(observer.values).toEqual([1, 1, 1]);
+		s.connections[0].sink.emit(2);
+		expect(observer.values).toEqual([1, 1, 1, 2, 2]);
+		s.connections[0].fail("terminal");
+		await flush();
+		expect(observer.errors).toEqual(["terminal", "terminal"]);
+		expect(observer.notifications).toBe(4);
+		expect(p.stats()).toMatchObject({ subscribers: 2, callbackErrors: 0 });
+	});
 	it("shares by key, isolates pools, retains undefined and stable snapshots", async () => {
 		const p = pool();
 		const q = pool();

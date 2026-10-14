@@ -14,8 +14,8 @@ export class LineReader {
 		this.options = options;
 	}
 
-	write(chunk: string): void {
-		if (chunk.length === 0) return;
+	write(chunk: string, signal?: AbortSignal): void {
+		if (chunk.length === 0 || signal?.aborted) return;
 		let start = this.skipLeadingLF && chunk[0] === "\n" ? 1 : 0;
 		this.skipLeadingLF = false;
 		const delimiter = /[\r\n]/g;
@@ -24,6 +24,8 @@ export class LineReader {
 		while (match) {
 			this.append(chunk.slice(start, match.index));
 			this.finishLine();
+			// Delivery can synchronously abort; leave the remaining cursor/data untouched.
+			if (signal?.aborted) return;
 			if (chunk[match.index] === "\r") {
 				if (chunk[delimiter.lastIndex] === "\n") delimiter.lastIndex++;
 				else this.skipLeadingLF = delimiter.lastIndex === chunk.length;

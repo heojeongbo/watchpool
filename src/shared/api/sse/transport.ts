@@ -13,6 +13,24 @@ export class SseHttpError extends Error {
 	}
 }
 
+/** Headers accepts byte strings; SSE cursors are UTF-8 on the wire. */
+function eventIdHeader(id: string): string {
+	let value = "";
+	for (const byte of new TextEncoder().encode(id))
+		value += String.fromCharCode(byte);
+	return value;
+}
+
+async function discardBody(
+	body: ReadableStream<Uint8Array> | null,
+): Promise<void> {
+	try {
+		await body?.cancel();
+	} catch {
+		// Cleanup failure must not replace the HTTP/content-type validation error.
+	}
+}
+
 /** Validate the HTTP response before handing ownership of its body to the reader. */
 export async function openEventBody(
 	options: SseOptions,
@@ -22,7 +40,7 @@ export async function openEventBody(
 	const headers = new Headers(options.headers);
 	headers.set("Accept", "text/event-stream");
 	headers.delete("Last-Event-ID");
-	if (lastId) headers.set("Last-Event-ID", lastId);
+	if (lastId) headers.set("Last-Event-ID", eventIdHeader(lastId));
 	const url = typeof options.url === "function" ? options.url() : options.url;
 	const response = await (options.fetch ?? globalThis.fetch)(url, {
 		headers,
@@ -30,7 +48,7 @@ export async function openEventBody(
 		signal,
 	});
 	if (!response.ok) {
-		await response.body?.cancel();
+		await discardBody(response.body);
 		throw new SseHttpError(response.status, response.headers);
 	}
 	if (!response.body) throw new Error("SSE response has no body");
@@ -40,7 +58,7 @@ export async function openEventBody(
 		.trim()
 		.toLowerCase();
 	if (contentType !== "text/event-stream") {
-		await response.body.cancel();
+		await discardBody(response.body);
 		throw new Error("Expected text/event-stream");
 	}
 	return response.body;

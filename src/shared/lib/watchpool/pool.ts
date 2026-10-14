@@ -32,12 +32,14 @@ export function exponentialRetry({
 	);
 }
 
+type Subscription<T> = { observer: Observer<T> };
+
 type Entry<T> = {
 	state: WatchState;
 	latest: T | undefined;
 	lastAt: number;
 	staleAfterMs: number | undefined;
-	observers: Set<Observer<T>>;
+	subscriptions: Set<Subscription<T>>;
 	abort: AbortController;
 	closeTimer: ReturnType<typeof setTimeout> | undefined;
 	retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -88,8 +90,9 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 		entry: Entry<T>,
 		deliver: (observer: Observer<T>) => void,
 	): void {
-		for (const observer of [...entry.observers]) {
-			if (entry.observers.has(observer)) call(() => deliver(observer));
+		for (const subscription of [...entry.subscriptions]) {
+			if (entry.subscriptions.has(subscription))
+				call(() => deliver(subscription.observer));
 		}
 	}
 
@@ -135,7 +138,7 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 			call(stopClock);
 			stopClock = undefined;
 		}
-		entry.observers.clear();
+		entry.subscriptions.clear();
 		entry.latest = undefined;
 		draining.set(key, entry.task);
 		entry.abort.abort();
@@ -166,13 +169,13 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 					counters.messages++;
 					entry.latest = value;
 					entry.lastAt = Date.now();
-					const recipients = [...entry.observers];
+					const recipients = [...entry.subscriptions];
 					state(entry, { status: "receiving", hasValue: true, stale: false });
 					// Snapshot before notifying: callback-driven joins receive only the replay.
-					for (const observer of recipients) {
-						if (!entry.observers.has(observer)) continue;
+					for (const subscription of recipients) {
+						if (!entry.subscriptions.has(subscription)) continue;
 						counters.deliveries++;
-						call(() => observer.onMessage?.(value));
+						call(() => subscription.observer.onMessage?.(value));
 					}
 				},
 			});
@@ -237,7 +240,7 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 					latest: undefined,
 					lastAt: 0,
 					staleAfterMs: watch.staleAfterMs,
-					observers: new Set(),
+					subscriptions: new Set(),
 					abort: new AbortController(),
 					closeTimer: undefined,
 					retryTimer: undefined,
@@ -255,8 +258,8 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 			}
 			clearTimeout(entry.closeTimer);
 			// Every acquisition owns a distinct subscription, even for the same observer object.
-			const subscription = { ...observer };
-			entry.observers.add(subscription);
+			const subscription = { observer };
+			entry.subscriptions.add(subscription);
 			const target = entry;
 			if (fresh) {
 				// Defer opening so dispose/unsubscribe can act before source callbacks run.
@@ -264,13 +267,13 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 					run(key, target, source),
 				);
 			} else if (entry.state.hasValue)
-				call(() => subscription.onMessage?.(target.latest as T));
+				call(() => subscription.observer.onMessage?.(target.latest as T));
 			let active = true;
 			return () => {
 				if (!active || target.stopped) return;
 				active = false;
-				target.observers.delete(subscription);
-				if (target.observers.size !== 0) return;
+				target.subscriptions.delete(subscription);
+				if (target.subscriptions.size !== 0) return;
 				target.closeTimer = setTimeout(() => close(key, target), lingerMs);
 			};
 		},
@@ -281,7 +284,7 @@ export function createWatchPool<T>(options: PoolOptions = {}): WatchPool<T> {
 			...counters,
 			keys: entries.size,
 			subscribers: [...entries.values()].reduce(
-				(n, entry) => n + entry.observers.size,
+				(n, entry) => n + entry.subscriptions.size,
 				0,
 			),
 		}),

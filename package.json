@@ -1,6 +1,6 @@
 {
 	"name": "@heojeongbo/watchpool",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "Share resilient streams across subscribers, with protocol adapters and React bindings.",
 	"type": "module",
 	"license": "MIT",
